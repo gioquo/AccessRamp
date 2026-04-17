@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AccessiMap — Rampe per Roma</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<!-- Leaflet CSS caricato subito (solo stili, non JS) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css"/>
+<style>
+  :root {
+    --bg:#0e0f11; --surface:#16181c; --border:#2a2d35;
+    --text:#e8eaf0; --muted:#7a7f8e; --accent:#00e5a0;
+    --warn:#f5c842; --ok:#00e5a0; --bad:#ff4a6b; --unknown:#7a7f8e;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;width:100%;}
+  body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;height:100vh;min-height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+  /* SETUP SCREEN */
+  #setup-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;}
+  #setup-screen.hidden{display:none;}
+  .setup-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px 40px;width:460px;max-width:95vw;}
+  .setup-logo{font-size:1.6rem;font-weight:800;margin-bottom:6px;}
+  .setup-logo span{color:var(--accent);}
+  .setup-sub{font-size:.75rem;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:28px;}
+  .setup-label{font-size:.72rem;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;display:block;}
+  .setup-input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-family:'DM Mono',monospace;font-size:.82rem;outline:none;transition:border .2s;margin-bottom:8px;}
+  .setup-input:focus{border-color:var(--accent);}
+  .setup-hint{font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;line-height:1.6;margin-bottom:20px;}
+  .setup-hint a{color:var(--accent);text-decoration:none;}
+  .setup-btn{width:100%;background:var(--accent);color:#000;border:none;padding:12px;border-radius:8px;font-family:'Syne',sans-serif;font-weight:700;font-size:.9rem;cursor:pointer;transition:opacity .2s;}
+  .setup-btn:hover{opacity:.85;}
+  .setup-skip{display:block;text-align:center;margin-top:12px;font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;cursor:pointer;text-decoration:underline;}
+  .setup-skip:hover{color:var(--text);}
+
+  /* LOADING OVERLAY */
+  #loading-overlay{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:8888;gap:16px;}
+  #loading-overlay.hidden{display:none;}
+  .loading-logo{font-size:1.8rem;font-weight:800;}
+  .loading-logo span{color:var(--accent);}
+  .loading-bar-wrap{width:200px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+  .loading-bar{height:100%;background:var(--accent);border-radius:2px;animation:loadpulse 1.2s ease-in-out infinite;}
+  @keyframes loadpulse{0%{width:0%}50%{width:80%}100%{width:100%}}
+  .loading-text{font-family:'DM Mono',monospace;font-size:.75rem;color:var(--muted);}
+
+  /* HEADER */
+  header{padding:12px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);background:var(--surface);z-index:1000;flex-shrink:0;}
+  .logo{font-size:1.3rem;font-weight:800;letter-spacing:-.5px;}
+  .logo span{color:var(--accent);}
+  .tagline{font-size:.72rem;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:.5px;}
+  .header-stats{margin-left:auto;display:flex;gap:20px;align-items:center;}
+  .stat{text-align:center;}
+  .stat-val{font-size:1.1rem;font-weight:700;}
+  .stat-label{font-size:.65rem;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.5px;}
+  .stat-val.ok{color:var(--ok);}.stat-val.bad{color:var(--bad);}.stat-val.warn{color:var(--warn);}
+  .token-badge{display:flex;align-items:center;gap:6px;font-size:.68rem;font-family:'DM Mono',monospace;background:var(--bg);border:1px solid var(--border);padding:4px 10px;border-radius:20px;cursor:pointer;transition:border-color .2s;white-space:nowrap;}
+  .token-badge:hover{border-color:var(--accent);}
+  .token-dot{width:6px;height:6px;border-radius:50%;background:var(--bad);}
+  .token-dot.active{background:var(--ok);}
+
+  /* MAIN */
+  .main{display:flex;flex:1;overflow:hidden;min-height:0;}
+
+  /* SIDEBAR */
+  .sidebar{width:300px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .sidebar-section{padding:14px 16px;border-bottom:1px solid var(--border);}
+  .section-title{font-size:.65rem;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;}
+  .search-row{display:flex;gap:8px;margin-bottom:8px;}
+  input[type="text"]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:'DM Mono',monospace;font-size:.8rem;flex:1;outline:none;transition:border .2s;}
+  input[type="text"]:focus{border-color:var(--accent);}
+  .btn{background:var(--accent);color:#000;border:none;padding:8px 14px;border-radius:6px;font-family:'Syne',sans-serif;font-weight:700;font-size:.78rem;cursor:pointer;transition:opacity .2s,transform .1s;white-space:nowrap;}
+  .btn:hover{opacity:.85;}.btn:active{transform:scale(.97);}
+  .btn.secondary{background:var(--border);color:var(--text);}
+  .radius-row{display:flex;align-items:center;gap:8px;}
+  .radius-label{font-size:.75rem;color:var(--muted);font-family:'DM Mono',monospace;white-space:nowrap;}
+  input[type="range"]{flex:1;accent-color:var(--accent);cursor:pointer;}
+  #radius-val{font-family:'DM Mono',monospace;font-size:.8rem;color:var(--accent);min-width:50px;text-align:right;}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:.72rem;font-family:'DM Mono',monospace;color:var(--muted);}
+  .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .dot.ok{background:var(--ok);}.dot.bad{background:var(--bad);}.dot.warn{background:var(--warn);}.dot.unknown{background:var(--unknown);}
+  .crossings-list{flex:1;overflow-y:auto;padding:10px;}
+  .crossings-list::-webkit-scrollbar{width:4px;}
+  .crossings-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+  .crossing-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s,transform .15s;}
+  .crossing-card:hover{border-color:var(--accent);transform:translateX(2px);}
+  .crossing-card.active{border-color:var(--accent);background:#00e5a011;}
+  .card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .card-name{font-size:.82rem;font-weight:600;flex:1;margin-right:8px;}
+  .status-badge{font-size:.62rem;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:20px;font-weight:500;white-space:nowrap;}
+  .badge-ok{background:#00e5a022;color:var(--ok);border:1px solid var(--ok);}
+  .badge-bad{background:#ff4a6b22;color:var(--bad);border:1px solid var(--bad);}
+  .badge-warn{background:#f5c84222;color:var(--warn);border:1px solid var(--warn);}
+  .badge-unknown{background:#7a7f8e22;color:var(--unknown);border:1px solid var(--unknown);}
+  .card-meta{font-size:.68rem;color:var(--muted);font-family:'DM Mono',monospace;}
+
+  /* DETAIL PANEL */
+  .detail-panel{position:absolute;bottom:20px;right:20px;width:340px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;z-index:1000;box-shadow:0 8px 40px rgba(0,0,0,.5);display:none;animation:slideUp .25s ease;}
+  .detail-panel.visible{display:block;}
+  @keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .detail-close{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;}
+  .detail-close:hover{color:var(--text);}
+  .detail-title{font-size:.95rem;font-weight:700;margin-bottom:4px;padding-right:24px;}
+  .detail-coords{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted);margin-bottom:12px;}
+  .mapillary-preview{width:100%;height:160px;background:var(--bg);border-radius:8px;border:1px solid var(--border);overflow:hidden;margin-bottom:12px;display:flex;align-items:center;justify-content:center;}
+  .mapillary-preview img{width:100%;height:100%;object-fit:cover;}
+  .img-placeholder{text-align:center;color:var(--muted);font-family:'DM Mono',monospace;font-size:.72rem;padding:10px;}
+  .img-placeholder .icon{font-size:2rem;margin-bottom:6px;}
+  .ai-result{background:var(--bg);border-radius:8px;padding:10px 12px;border:1px solid var(--border);margin-bottom:10px;font-size:.78rem;line-height:1.55;}
+  .ai-result-title{font-size:.62rem;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:6px;}
+  .ai-analyze-btn{width:100%;margin-top:4px;}
+  .spinner{width:14px;height:14px;border:2px solid #ffffff44;border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* MAP */
+  #map{flex:1;position:relative;min-width:0;min-height:0;}
+  /* NO filter - mappa a piena luminosità */
+  .map-overlay-badge{position:absolute;top:12px;left:12px;background:rgba(22,24,28,.9);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted);z-index:500;}
+  .map-layer-btn{position:absolute;top:12px;right:52px;background:rgba(22,24,28,.9);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-family:'DM Mono',monospace;font-size:.72rem;color:var(--text);z-index:500;cursor:pointer;transition:border-color .2s;}
+  .map-layer-btn:hover{border-color:var(--accent);}
+  .no-crossings{text-align:center;padding:30px 20px;color:var(--muted);font-family:'DM Mono',monospace;font-size:.78rem;line-height:1.6;}
+  .no-crossings .icon{font-size:2rem;margin-bottom:10px;}
+</style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY (shown while Leaflet JS loads) -->
+<div id="loading-overlay">
+  <div class="loading-logo">Accessi<span>Map</span></div>
+  <div class="loading-bar-wrap"><div class="loading-bar"></div></div>
+  <div class="loading-text">Caricamento mappa…</div>
+</div>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen" class="hidden">
+  <div class="setup-box">
+    <div class="setup-logo">Accessi<span>Map</span></div>
+    <div class="setup-sub">Configurazione iniziale · Una sola volta</div>
+    <label class="setup-label" for="mly-token-input">Token Mapillary (API v4)</label>
+    <input class="setup-input" type="text" id="mly-token-input" placeholder="MLY|xxxxxxxxxxxxxxxx|…"/>
+    <div class="setup-hint">
+      Ottieni il token gratuito su <a href="https://www.mapillary.com/dashboard/developers" target="_blank">mapillary.com/dashboard/developers</a>
+      → <em>Register application</em> → copia il <em>Client Token</em>.
+    </div>
+    <button class="setup-btn" onclick="saveToken()">Salva e avvia la mappa</button>
+    <span class="setup-skip" onclick="skipToken()">Continua senza token (solo dati OSM, nessuna immagine)</span>
+  </div>
+</div>
+
+<!-- APP -->
+<header>
+  <div>
+    <div class="logo">Accessi<span>Map</span></div>
+    <div class="tagline">Rampe pedonali · Roma · Powered by AI</div>
+  </div>
+  <div class="token-badge" onclick="resetToken()" title="Clicca per cambiare token">
+    <div class="token-dot" id="token-dot"></div>
+    <span id="token-label">Mapillary: —</span>
+  </div>
+  <div class="header-stats">
+    <div class="stat"><div class="stat-val ok" id="stat-ok">0</div><div class="stat-label">Con rampa</div></div>
+    <div class="stat"><div class="stat-val bad" id="stat-bad">0</div><div class="stat-label">Senza rampa</div></div>
+    <div class="stat"><div class="stat-val warn" id="stat-partial">0</div><div class="stat-label">Parziale</div></div>
+    <div class="stat"><div class="stat-val" id="stat-total">0</div><div class="stat-label">Totale</div></div>
+  </div>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="section-title">Cerca per zona</div>
+      <div class="search-row">
+        <input type="text" id="zone-input" placeholder="Es: Via Appia, Trastevere…"/>
+        <button class="btn" onclick="searchZone()">Cerca</button>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Raggio di ricerca</div>
+      <div class="radius-row">
+        <span class="radius-label">Raggio:</span>
+        <input type="range" id="radius-slider" min="100" max="2000" value="500" step="100" oninput="updateRadius(this.value)">
+        <span id="radius-val">500 m</span>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:6px;">
+        <button class="btn secondary" style="flex:1" onclick="loadCrossingsInRadius()">Carica attraversamenti</button>
+        <button class="btn" style="flex:1" onclick="analyzeAllVisible()">Analizza tutti AI</button>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="section-title">Legenda</div>
+      <div class="legend">
+        <div class="legend-item"><div class="dot ok"></div>Con rampa</div>
+        <div class="legend-item"><div class="dot bad"></div>Senza rampa</div>
+        <div class="legend-item"><div class="dot warn"></div>Parziale</div>
+        <div class="legend-item"><div class="dot unknown"></div>Non verificato</div>
+      </div>
+    </div>
+    <div class="section-title" style="padding:10px 16px 0;font-size:.62rem;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">Attraversamenti trovati</div>
+    <div class="crossings-list" id="crossings-list">
+      <div class="no-crossings"><div class="icon">🗺️</div>Clicca "Carica attraversamenti"<br>per trovare i punti pedonali<br>nell'area selezionata</div>
+    </div>
+  </div>
+  <div id="map">
+    <div class="map-overlay-badge" id="map-badge">📍 Colosseo, Roma</div>
+    <div class="map-layer-btn" id="layer-btn" onclick="toggleLayer()">🛰 Satellite</div>
+  </div>
+</div>
+
+<!-- DETAIL PANEL -->
+<div class="detail-panel" id="detail-panel">
+  <button class="detail-close" onclick="closeDetail()">✕</button>
+  <div class="detail-title" id="detail-title">—</div>
+  <div class="detail-coords" id="detail-coords">—</div>
+  <div class="mapillary-preview" id="mapillary-preview">
+    <div class="img-placeholder"><div class="icon">📷</div><div>Nessuna immagine caricata</div></div>
+  </div>
+  <div class="ai-result" id="ai-result" style="display:none">
+    <div class="ai-result-title">🤖 Analisi AI</div>
+    <div id="ai-result-text"></div>
+  </div>
+  <button class="btn ai-analyze-btn" id="analyze-btn" onclick="analyzeCurrentCrossing()">🤖 Analizza con AI</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// STEP 1: Carica Leaflet dinamicamente con onload callback
+// Questo è l'UNICO modo sicuro in ambienti iframe/sandbox
+// ═══════════════════════════════════════════════════════
+(function loadLeaflet() {
+  var script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js';
+  script.onload = function() {
+    // Leaflet è pronto — nascondi loading e avvia app
+    document.getElementById('loading-overlay').classList.add('hidden');
+    onLeafletReady();
+  };
+  script.onerror = function() {
+    // Prova CDN alternativo se jsdelivr fallisce
+    var script2 = document.createElement('script');
+    script2.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script2.onload = function() {
+      document.getElementById('loading-overlay').classList.add('hidden');
+      onLeafletReady();
+    };
+    script2.onerror = function() {
+      document.getElementById('loading-overlay').querySelector('.loading-text').textContent = '❌ Errore caricamento mappa. Ricarica la pagina.';
+    };
+    document.head.appendChild(script2);
+  };
+  document.head.appendChild(script);
+})();
+
+// ═══════════════════════════════════════════════════════
+// STEP 2: Tutto il resto parte SOLO dopo che L è definito
+// ═══════════════════════════════════════════════════════
+function onLeafletReady() {
+  // Ora L è garantito definito
+
+  // TOKEN
+  var MAPILLARY_TOKEN = '';
+  try { MAPILLARY_TOKEN = localStorage.getItem('mly_token') || ''; } catch(e){}
+
+  function saveToken() {
+    var val = document.getElementById('mly-token-input').value.trim();
+    MAPILLARY_TOKEN = val;
+    try { val ? localStorage.setItem('mly_token', val) : localStorage.removeItem('mly_token'); } catch(e){}
+    document.getElementById('setup-screen').classList.add('hidden');
+    updateTokenBadge();
+    initMap();
+  }
+  function skipToken() {
+    MAPILLARY_TOKEN = '';
+    try { localStorage.removeItem('mly_token'); } catch(e){}
+    document.getElementById('setup-screen').classList.add('hidden');
+    updateTokenBadge();
+    initMap();
+  }
+  function resetToken() {
+    document.getElementById('mly-token-input').value = MAPILLARY_TOKEN;
+    document.getElementById('setup-screen').classList.remove('hidden');
+  }
+  function updateTokenBadge() {
+    var dot = document.getElementById('token-dot');
+    var label = document.getElementById('token-label');
+    if (MAPILLARY_TOKEN) { dot.classList.add('active'); label.textContent = 'Mapillary: ✓ attivo'; }
+    else { dot.classList.remove('active'); label.textContent = 'Mapillary: nessun token'; }
+  }
+
+  // Esponi funzioni al DOM (onclick handlers)
+  window.saveToken = saveToken;
+  window.skipToken = skipToken;
+  window.resetToken = resetToken;
+
+  // Pre-fill
+  if (MAPILLARY_TOKEN) document.getElementById('mly-token-input').value = MAPILLARY_TOKEN;
+  updateTokenBadge();
+
+  // MAP STATE
+  var map, radiusCircle;
+  var colosseo = [41.8902, 12.4922];
+  var radiusCenter = [41.8902, 12.4922];
+  var currentRadius = 500;
+  var markers = [], crossings = [], selectedCrossing = null, activeCard = null;
+  var streetLayer, satelliteLayer, isSatellite = true;
+
+  function initMap() {
+    map = L.map('map', { zoomControl: true }).setView(colosseo, 16);
+
+    streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors', maxZoom: 19
+    });
+
+    satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics', maxZoom: 19
+    });
+
+    // Parte con satellite
+    satelliteLayer.addTo(map);
+
+    drawRadiusCircle(colosseo, currentRadius);
+    map.on('click', function(e) {
+      radiusCenter = [e.latlng.lat, e.latlng.lng];
+      drawRadiusCircle(radiusCenter, currentRadius);
+      document.getElementById('map-badge').textContent = '📍 ' + e.latlng.lat.toFixed(5) + ', ' + e.latlng.lng.toFixed(5);
+    });
+  }
+
+  window.toggleLayer = function() {
+    if (!map) return;
+    if (isSatellite) {
+      map.removeLayer(satelliteLayer);
+      streetLayer.addTo(map);
+      document.getElementById('layer-btn').textContent = '🛰 Satellite';
+      isSatellite = false;
+    } else {
+      map.removeLayer(streetLayer);
+      satelliteLayer.addTo(map);
+      document.getElementById('layer-btn').textContent = '🗺 Mappa';
+      isSatellite = true;
+    }
+  };
+
+  function drawRadiusCircle(center, r) {
+    if (radiusCircle) map.removeLayer(radiusCircle);
+    radiusCircle = L.circle(center, { radius:r, color:'#00e5a0', fillColor:'#00e5a0', fillOpacity:.05, weight:1.5, dashArray:'6 4' }).addTo(map);
+  }
+
+  function makeIcon(status) {
+    var colors = { ok:'#00e5a0', bad:'#ff4a6b', partial:'#f5c842', unknown:'#7a7f8e' };
+    var c = colors[status] || '#7a7f8e';
+    return L.divIcon({
+      html: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 20 12 20s12-11 12-20C24 5.4 18.6 0 12 0z" fill="'+c+'" opacity=".9"/><circle cx="12" cy="12" r="5" fill="white" opacity=".9"/></svg>',
+      iconSize:[24,32], iconAnchor:[12,32], popupAnchor:[0,-32], className:''
+    });
+  }
+
+  // OVERPASS
+  window.loadCrossingsInRadius = async function() {
+    if (!map) return;
+    var lat = radiusCenter[0], lng = radiusCenter[1];
+    var listEl = document.getElementById('crossings-list');
+    listEl.innerHTML = '<div class="no-crossings"><div class="spinner"></div><br>Carico da OpenStreetMap…</div>';
+    markers.forEach(function(m){ map.removeLayer(m); });
+    markers = []; crossings = [];
+
+    var q = '[out:json][timeout:25];(node["highway"="crossing"](around:'+currentRadius+','+lat+','+lng+');node["crossing"="uncontrolled"](around:'+currentRadius+','+lat+','+lng+');node["crossing"="traffic_signals"](around:'+currentRadius+','+lat+','+lng+'););out body;';
+    try {
+      var res = await fetch('https://overpass-api.de/api/interpreter', { method:'POST', body:'data='+encodeURIComponent(q) });
+      var data = await res.json();
+      var els = data.elements || [];
+      if (!els.length) {
+        listEl.innerHTML = '<div class="no-crossings"><div class="icon">🔍</div>Nessun attraversamento.<br>Prova ad aumentare il raggio.</div>';
+        updateStats(); return;
+      }
+      crossings = els.slice(0,60).map(function(el, i) {
+        var t = el.tags || {};
+        var s = 'unknown';
+        if (t.kerb==='lowered'||t.tactile_paving==='yes'||t.sloped_curb==='yes'||t.kerb==='flush') s='ok';
+        else if (t.kerb==='raised'||t.kerb==='no') s='bad';
+        return { id:el.id, lat:el.lat, lng:el.lon, name:t.name||t['addr:street']||('Attraversamento #'+(i+1)), status:s, tags:t, aiAnalysis:null, mapillaryImg:null };
+      });
+      renderMarkers(); renderList(); updateStats();
+      if (crossings.length) map.fitBounds(L.featureGroup(markers).getBounds().pad(.1));
+    } catch(e) {
+      listEl.innerHTML = '<div class="no-crossings"><div class="icon">⚠️</div>Errore nel caricamento.<br>Riprova tra qualche secondo.</div>';
+    }
+  };
+
+  function renderMarkers() {
+    markers.forEach(function(m){ map.removeLayer(m); });
+    markers = [];
+    crossings.forEach(function(c, i) {
+      markers.push(L.marker([c.lat,c.lng],{icon:makeIcon(c.status)}).addTo(map).on('click',function(){ selectCrossing(i); }));
+    });
+  }
+
+  function renderList() {
+    var el = document.getElementById('crossings-list');
+    if (!crossings.length) { el.innerHTML='<div class="no-crossings"><div class="icon">🗺️</div>Nessun attraversamento.</div>'; return; }
+    el.innerHTML = crossings.map(function(c,i){
+      var badge = c.status==='ok'?'ok':c.status==='bad'?'bad':c.status==='partial'?'warn':'unknown';
+      var label = c.status==='ok'?'✓ Rampa':c.status==='bad'?'✗ Nessuna':c.status==='partial'?'~ Parziale':'? N/D';
+      return '<div class="crossing-card" id="card-'+i+'" onclick="window._selectCrossing('+i+')"><div class="card-top"><div class="card-name">'+c.name+'</div><span class="status-badge badge-'+badge+'">'+label+'</span></div><div class="card-meta">'+c.lat.toFixed(5)+', '+c.lng.toFixed(5)+'</div></div>';
+    }).join('');
+  }
+
+  function updateStats() {
+    document.getElementById('stat-ok').textContent = crossings.filter(function(c){return c.status==='ok';}).length;
+    document.getElementById('stat-bad').textContent = crossings.filter(function(c){return c.status==='bad';}).length;
+    document.getElementById('stat-partial').textContent = crossings.filter(function(c){return c.status==='partial';}).length;
+    document.getElementById('stat-total').textContent = crossings.length;
+  }
+
+  function selectCrossing(i) {
+    selectedCrossing = i;
+    var c = crossings[i];
+    if (activeCard) activeCard.classList.remove('active');
+    var card = document.getElementById('card-'+i);
+    if (card) { card.classList.add('active'); activeCard = card; }
+    map.setView([c.lat,c.lng], 18);
+    document.getElementById('detail-title').textContent = c.name;
+    document.getElementById('detail-coords').textContent = c.lat.toFixed(6)+', '+c.lng.toFixed(6);
+    var preview = document.getElementById('mapillary-preview');
+    preview.innerHTML = c.mapillaryImg
+      ? '<img src="'+c.mapillaryImg+'" alt="Vista"/>'
+      : '<div class="img-placeholder"><div class="icon">📷</div><div>Clicca "Analizza con AI"<br>per caricare immagini</div></div>';
+    var aiR = document.getElementById('ai-result');
+    if (c.aiAnalysis) { aiR.style.display='block'; document.getElementById('ai-result-text').innerHTML=c.aiAnalysis; }
+    else aiR.style.display='none';
+    document.getElementById('detail-panel').classList.add('visible');
+  }
+  window._selectCrossing = selectCrossing;
+
+  window.closeDetail = function() {
+    document.getElementById('detail-panel').classList.remove('visible');
+    if (activeCard) { activeCard.classList.remove('active'); activeCard=null; }
+  };
+
+  // MAPILLARY
+  async function fetchMapillaryImage(lat, lng) {
+    if (!MAPILLARY_TOKEN) return null;
+    try {
+      var url = 'https://graph.mapillary.com/images?access_token='+MAPILLARY_TOKEN+'&fields=id,thumb_256_url&bbox='+(lng-.001)+','+(lat-.001)+','+(lng+.001)+','+(lat+.001)+'&limit=1';
+      var res = await fetch(url);
+      var data = await res.json();
+      return (data.data && data.data[0]) ? (data.data[0].thumb_256_url || null) : null;
+    } catch(e) { return null; }
+  }
+
+  // AI ANALYSIS
+  window.analyzeCurrentCrossing = async function() {
+    if (selectedCrossing === null) return;
+    var c = crossings[selectedCrossing];
+    var btn = document.getElementById('analyze-btn');
+    btn.innerHTML = '<span class="spinner"></span>Cerco immagine e analizzo…';
+    btn.disabled = true;
+
+    var imgUrl = await fetchMapillaryImage(c.lat, c.lng);
+    var preview = document.getElementById('mapillary-preview');
+    var userContent;
+
+    if (imgUrl) {
+      crossings[selectedCrossing].mapillaryImg = imgUrl;
+      preview.innerHTML = '<img src="'+imgUrl+'" alt="Vista stradale"/>';
+      userContent = [
+        { type:"image", source:{ type:"url", url:imgUrl } },
+        { type:"text", text:"Sei un esperto di accessibilità urbana. Analizza questa immagine di un attraversamento pedonale a Roma (coord: "+c.lat.toFixed(5)+", "+c.lng.toFixed(5)+").\n\nRispondi in italiano:\n1. **Presenza rampa/scivolo**: Sì / No / Non visibile\n2. **Qualità**: Buona / Deteriorata / Parziale\n3. **Note**: max 2 righe\n4. **Accessibilità**: 🟢 Accessibile / 🟡 Parzialmente / 🔴 Non accessibile" }
+      ];
+    } else {
+      var noImgMsg = MAPILLARY_TOKEN ? 'Nessuna immagine Mapillary disponibile per quest\'area' : 'Nessun token Mapillary — clicca il badge in alto per configurarlo';
+      preview.innerHTML = '<div class="img-placeholder"><div class="icon">📷</div><div>'+noImgMsg+'</div></div>';
+      userContent = "Esperto di accessibilità urbana a Roma. Attraversamento pedonale: lat="+c.lat.toFixed(5)+", lon="+c.lng.toFixed(5)+". Tag OSM: "+JSON.stringify(c.tags)+".\n\nNessuna immagine disponibile. Basati sui tag OSM:\n1. **Valutazione OSM**: cosa indicano i tag sulle rampe?\n2. **Tag mancanti**: quali aggiungere?\n3. **Accessibilità**: 🟢 Accessibile / 🟡 Incerto / 🔴 Problematico\n\nIn italiano, conciso.";
+    }
+
+    try {
+      var response = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000,
+          system:"Assistente specializzato in accessibilità urbana. Rispondi sempre in italiano, preciso e conciso. Usa markdown.",
+          messages:[{ role:"user", content:userContent }] })
+      });
+      var data = await response.json();
+      var text = (data.content && data.content[0]) ? data.content[0].text : "Nessuna risposta.";
+      var fmt = text.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+      crossings[selectedCrossing].aiAnalysis = fmt;
+      if (text.indexOf('🟢')>=0) crossings[selectedCrossing].status='ok';
+      else if (text.indexOf('🔴')>=0) crossings[selectedCrossing].status='bad';
+      else if (text.indexOf('🟡')>=0) crossings[selectedCrossing].status='partial';
+      document.getElementById('ai-result').style.display='block';
+      document.getElementById('ai-result-text').innerHTML=fmt;
+      if (markers[selectedCrossing]) markers[selectedCrossing].setIcon(makeIcon(crossings[selectedCrossing].status));
+      renderList(); updateStats();
+      setTimeout(function(){ var card=document.getElementById('card-'+selectedCrossing); if(card){card.classList.add('active');activeCard=card;} },50);
+    } catch(e) {
+      document.getElementById('ai-result').style.display='block';
+      document.getElementById('ai-result-text').innerHTML='<span style="color:var(--bad)">Errore nell\'analisi AI. Verifica la connessione.</span>';
+    }
+    btn.innerHTML='🔄 Rianalizza'; btn.disabled=false;
+  };
+
+  window.analyzeAllVisible = async function() {
+    if (!crossings.length) { alert('Prima carica gli attraversamenti.'); return; }
+    var unknown = crossings.map(function(c,i){return {c:c,i:i};}).filter(function(x){return x.c.status==='unknown';});
+    if (!unknown.length) { alert('Tutti già analizzati!'); return; }
+    for (var k=0; k<Math.min(5,unknown.length); k++) {
+      selectedCrossing = unknown[k].i;
+      await window.analyzeCurrentCrossing();
+      await new Promise(function(r){setTimeout(r,800);});
+    }
+    selectedCrossing=null;
+  };
+
+  window.updateRadius = function(val) {
+    currentRadius = parseInt(val);
+    document.getElementById('radius-val').textContent = val >= 1000 ? (val/1000).toFixed(1)+' km' : val+' m';
+    if (map) drawRadiusCircle(radiusCenter, currentRadius);
+  };
+
+  window.searchZone = async function() {
+    var q = document.getElementById('zone-input').value.trim();
+    if (!q || !map) return;
+    try {
+      var res = await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(q+', Roma')+'&format=json&limit=1');
+      var data = await res.json();
+      if (data && data[0]) {
+        radiusCenter = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        map.setView(radiusCenter, 16);
+        drawRadiusCircle(radiusCenter, currentRadius);
+        document.getElementById('map-badge').textContent = '📍 '+data[0].display_name.split(',')[0];
+      }
+    } catch(e) {}
+  };
+
+  document.getElementById('zone-input').addEventListener('keydown', function(e){ if(e.key==='Enter') window.searchZone(); });
+
+  // BOOT: mostra setup o inizializza direttamente
+  if (MAPILLARY_TOKEN) {
+    initMap();
+  } else {
+    document.getElementById('setup-screen').classList.remove('hidden');
+  }
+
+} // fine onLeafletReady
+</script>
+</body>
+</html>
